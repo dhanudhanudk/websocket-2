@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="../static/css/user.css">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" 
+    rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+
+    <title>User List</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            font-size: medium;
+            font-weight: bold;
+            margin: 0;
+            background: #f1f3f3;
+            height: 100vh; 
+            display: flex; 
+        }
+        ul {
+            list-style-type: none;
+            padding: 0; 
+        }
+        li {
+            background: #fff; 
+            margin: 19px 0; 
+            padding: 10px; 
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); 
+        }
+        a {
+            text-decoration: none; 
+            color: black; 
+        }
+        a:hover {
+            color: #3498db; 
+        }
+        .user-list {
+            width: 25%;
+            background: #1abc9c;
+            height: 100%; 
+            overflow-y: auto; 
+            padding: 10px; 
+            float: left;
+        }
+        .chat-box {
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background-color: white;
+            padding: 20px;
+            width: 75%; 
+            height: 100%; 
+            display: flex;
+            flex-direction: column;
+        }
+        #chat-container {
+            border: 1px solid #ddd;
+            padding: 10px;
+            height: 675px;
+            overflow-y: scroll;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .message {
+            max-width: 60%;
+            padding: 10px;
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            word-wrap: break-word; 
+        }
+        .sender {
+            background-color: #d1f5d3;
+            align-self: flex-end;
+            text-align: right;
+            margin-left: auto;
+            border-top-right-radius: 0;
+        }
+        .receiver {
+            background-color: #f1f1f1;
+            align-self: flex-start;
+            text-align: left;
+            margin-right: 20%;
+            border-top-left-radius: 0;
+        }
+        #message-input {
+            margin-top: auto; 
+            width: calc(100% - 90px); 
+        }
+        #send-button {
+            margin-left: 10px; 
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container-fluid">
+        <div class="user-list">
+            <h1>User List</h1>
+            <ul>
+                {% for user in users %}
+                    <li>
+                        <a href="#" class="user-link" data-user-id="{{ user.id }}" data-user-name="{{ user.name }}">{{ user.name }}</a>
+                    </li>
+                {% endfor %}
+            </ul>
+        </div> 
+
+        <div class="chat-box">
+            <h1>Chat Room</h1>
+            <div id="chat-container"></div>
+            <div style="display: flex; align-items: center;">
+                <input type="text" id="message-input" placeholder="Type a message..." />
+                <button id="send-button">Send</button>
+            </div>
+    </div>
+
+    
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            let chatSocket = null;
+        
+            function initializeChat(receiverId) {
+                const senderId = "{{ request.user.id }}";
+        
+                // Close previous connection if it exists
+                if (chatSocket) {
+                    chatSocket.close();
+                }
+        
+                // Construct the room name from sender and receiver IDs
+                const roomName = `room_${Math.min(senderId, receiverId)}_${Math.max(senderId, receiverId)}`;
+                chatSocket = new WebSocket(`ws://localhost:8000/ws/chat/${roomName}/`);
+        
+                chatSocket.onopen = function () {
+                    console.log("WebSocket connection established.");
+                    loadChatHistory(senderId, receiverId);
+                };
+        
+                chatSocket.onclose = function () {
+                    console.log("WebSocket connection closed.");
+                };
+        
+                // Handle message sending
+                document.querySelector("#message-input").focus();
+                document.querySelector("#message-input").onkeyup = function (e) {
+                    if (e.key === "Enter") {
+                        sendMessage(receiverId);
+                    }
+                };
+        
+                document.querySelector("#send-button").onclick = function () {
+                    sendMessage(receiverId);
+                };
+        
+                // Handle incoming messages
+                chatSocket.onmessage = function (e) {
+                console.log("Message received:", e.data);
+                try {
+                    const data = JSON.parse(e.data);
+                    const messageDiv = document.createElement("div");
+                    messageDiv.classList.add("message");
+
+                    // Check if the sender is the logged-in user
+                    if (data.sender_id === senderId) {
+                        messageDiv.classList.add("sender");
+                    } else {
+                        messageDiv.classList.add("receiver");
+                    }
+
+                    messageDiv.innerHTML = `<strong>${data.sender}:</strong> ${data.message}`;
+                    document.querySelector("#chat-container").appendChild(messageDiv);
+
+                    // Scroll to the bottom
+                    const chatContainer = document.querySelector("#chat-container");
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+
+                } catch (error) {
+                    console.error("Error parsing message:", error);
+                }
+            };
+            }
+        
+            function sendMessage(receiverId) {
+                const messageInput = document.querySelector("#message-input");
+                const message = messageInput.value.trim();
+                if (message !== "") {
+                    const senderId = "{{ request.user.id }}";  // Use the sender ID
+                    const roomName = `room_${Math.min(senderId, receiverId)}_${Math.max(senderId, receiverId)}`; // Construct the room name
+        
+                    chatSocket.send(JSON.stringify({ 
+                        message: message, 
+                        sender: senderId,
+                        receiver: receiverId,
+                        room: roomName  // Include the room key
+                    }));
+                    messageInput.value = ""; // Clear input
+                }
+            }
+        
+            function loadChatHistory(senderId, receiverId) {
+                fetch(`/chat_history/${senderId}/${receiverId}/`)
+                    .then(response => response.ok ? response.json() : Promise.reject())
+                    .then(data => {
+                        const chatContainer = document.querySelector("#chat-container");
+                        chatContainer.innerHTML = ''; // Clear current messages
+        
+                        data.messages.forEach(msg => {
+                            displayMessage(msg);
+                        });
+                    })
+                    .catch(error => console.error('Error loading chat history:', error));
+            }
+        
+            function displayMessage(data) {
+                const chatContainer = document.querySelector("#chat-container");
+                const messageDiv = document.createElement("div");
+                messageDiv.classList.add("message");
+        
+                if (data.sender_id === "{{ request.user.id }}") {
+                    messageDiv.classList.add("sender");
+                } else {
+                    messageDiv.classList.add("receiver");
+                }
+        
+                messageDiv.innerHTML = `<strong>${data.sender}:</strong> ${data.message}`;
+                chatContainer.appendChild(messageDiv);
+        
+                // Scroll to the bottom
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+        
+            // Add click event to user links
+            document.querySelectorAll('.user-link').forEach(link => {
+                link.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    const receiverId = this.getAttribute('data-user-id');
+                    initializeChat(receiverId);
+                });
+            });
+        });
+    </script>
+        
+        
+    
+</body>
+<!-- <body>
+    <div class="container-fluid">
+        <div class="user-list">
+            <h1>User List</h1>
+            <ul>
+                {% for user in users %}
+                    <li>
+                        <a href="#" class="user-link" data-user-id="{{ user.id }}" data-user-name="{{ user.name }}">{{ user.name }}</a>
+                    </li>
+                {% endfor %}
+            </ul>
+        </div> 
+
+        <h1>Chat Room: {{ room_name }}</h1>
+        <div id="chat-container"></div>
+        <div style="display: flex; align-items: center;">
+        <textarea id="chat-log" cols="30" rows="10" readonly></textarea><br>
+        <input id="chat-message-input" type="text" size="100">
+        <button id="send-button">Send</button> -->
+
+        <!-- <div class="chat-box">
+            <h1>Chat Room</h1>
+            <div id="chat-container"></div>
+            <div style="display: flex; align-items: center;">
+                <input type="text" id="message-input" placeholder="Type a message..." />
+                <button id="send-button">Send</button>
+            </div> -->
+    <!-- </div>
+
+    <script>
+       
+        document.addEventListener("DOMContentLoaded", function() {
+            let chatSocket = null;
+
+            function initializeChat(receiverId) {
+                const senderId = "{{ request.user.id }}";
+
+
+                if (chatSocket) {
+                    chatSocket.close();
+                }
+                const roomName = "{{ room_name }}";
+                chatSocket = new WebSocket(`ws://localhost:8000/ws/chat/${roomName}/`);
+w
+                chatSocket.onopen = function () {
+                    console.log("The connection was setup successfully!");
+                    loadChatHistory(senderId, receiverId);
+                };
+
+
+                chatSocket.onclose = function () {
+                    console.log("WebSocket connection closed.");
+                };
+
+                document.querySelector("#message-input").focus();
+                document.querySelector("#message-input").onkeyup = function (e) {
+                    if (e.key === "Enter") {
+                        document.querySelector("#send-button").click();
+                    }
+                };
+
+                document.querySelector("#send-button").onclick = function () {
+                    const messageInput = document.querySelector("#message-input").value;
+                    if (messageInput.trim() !== "") {
+                        chatSocket.send(JSON.stringify({ 
+                            message: messageInput, 
+                            sender: "{{ request.user.id }}",
+                            receiver: receiverId
+                        }));
+                        document.querySelector("#message-input").value = "";
+                    }
+                };
+
+                chatSocket.onmessage = function (e) {
+                console.log("Message received:", e.data);
+                try {
+                    const data = JSON.parse(e.data);
+                    const messageDiv = document.createElement("div");
+                    messageDiv.classList.add("message");
+
+                    if (data.sender_id === senderId) {
+                        messageDiv.classList.add("sender");
+                    } else {
+                        messageDiv.classList.add("receiver");
+                    }
+
+                    messageDiv.innerHTML = `<strong>${data.sender}:</strong> ${data.message}`;
+                    document.querySelector("#chat-container").appendChild(messageDiv);
+
+                    // Scroll to the bottom
+                    document.querySelector("#chat-container").scrollTop = document.querySelector("#chat-container").scrollHeight;
+                } catch (error) {
+                    console.error("Error parsing message:", error);
+                }
+            };
+
+
+            }
+
+            function loadChatHistory(senderId, receiverId) {
+                fetch(`/chat_history/${senderId}/${receiverId}/`)
+                    .then(response => response.ok ? response.json() : Promise.reject())
+                    .then(data => {
+                        const chatContainer = document.querySelector("#chat-container");
+                        chatContainer.innerHTML = '';
+
+                        data.messages.forEach(msg => {
+                            const messageDiv = document.createElement("div");
+                            messageDiv.classList.add("message");
+
+                            if (msg.sender_id == senderId) {
+                                messageDiv.classList.add("sender");
+                            } else {
+                                messageDiv.classList.add("receiver");
+                            }
+
+                            messageDiv.innerHTML = `<strong>${msg.sender}:</strong> ${msg.message}`;
+                            chatContainer.appendChild(messageDiv);
+                        });
+                    })
+                    .catch(error => console.error('Error loading chat history:', error));
+            }
+
+            document.querySelectorAll('.user-link').forEach(link => {
+                link.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    const receiverId = this.getAttribute('data-user-id');
+                    initializeChat(receiverId);
+                });
+            });
+        });
+        
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" 
+    crossorigin="anonymous"></script>
+</body>
+</html> -->
